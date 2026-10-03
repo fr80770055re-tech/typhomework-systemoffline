@@ -536,8 +536,8 @@
         // 🌟 縮放功能核心 🌟
         function changeZoom(val) {
             document.documentElement.style.setProperty('--zoom', val);
+            localStorage.setItem('v35_local_zoom', val);
             if(currentUser) { localStorage.setItem(`zoom_${currentUser.uid}`, val); }
-            else { localStorage.setItem('v35_local_zoom', val); }
         }
 
         const firebaseConfig = {
@@ -555,6 +555,14 @@
 
         // 潔牙掃地固定就這兩項，不開放新增或刪除
         const CLEAN_ITEMS = ['潔牙', '掃地'];
+
+        // Firebase Realtime Database 會把陣列存成物件（{"0":"甲","1":"乙"}），刪掉元素後還會留下 null。
+        // 從正式版下載的備份還原進來就是這種形狀，若不正規化，tasks.includes / forEach 會讓整個畫面繪製失敗。
+        function toNameList(v) {
+            if (!v) return [];
+            const arr = Array.isArray(v) ? v : Object.keys(v).sort((a, b) => Number(a) - Number(b)).map(k => v[k]);
+            return arr.filter(x => typeof x === 'string' && x.trim() !== '');
+        }
 
         let tasks = []; let globalTaskData = {}; let historyAtt = {}; let dailyNotes = {}; let announcements = ""; let cleanTasks = CLEAN_ITEMS.slice(); let historyClean = {};
         let examScheduleStr = "08:40 - 09:20 國語\n09:30 - 10:10 數學";
@@ -591,7 +599,7 @@
 
         function saveToCloud() {
             if(!currentUser) return;
-            tasks = (tasks || []).map(t => t.replace(/[.#$/\[\]]/g, '_')); cleanTasks = (cleanTasks || []).map(t => t.replace(/[.#$/\[\]]/g, '_'));
+            tasks = toNameList(tasks).map(t => t.replace(/[.#$/\[\]]/g, '_')); cleanTasks = CLEAN_ITEMS.slice();
             let safeTaskDates = {}; for(let t in taskDates) safeTaskDates[t.replace(/[.#$/\[\]]/g, '_')] = taskDates[t]; taskDates = safeTaskDates;
             let safeGlobalTaskData = {}; for(let id in globalTaskData) { safeGlobalTaskData[id] = {}; for(let t in globalTaskData[id]) safeGlobalTaskData[id][t.replace(/[.#$/\[\]]/g, '_')] = globalTaskData[id][t]; } globalTaskData = safeGlobalTaskData;
             let safeHistoryClean = {}; for(let d in historyClean) { safeHistoryClean[d] = {}; for(let id in historyClean[d]) { safeHistoryClean[d][id] = {}; for(let t in historyClean[d][id]) safeHistoryClean[d][id][t.replace(/[.#$/\[\]]/g, '_')] = historyClean[d][id][t]; } } historyClean = safeHistoryClean;
@@ -636,7 +644,8 @@
                 document.getElementById('mainApp').classList.remove('opacity-0', 'pointer-events-none'); 
                 
                 // 載入該帳號的縮放設定
-                const savedZoom = localStorage.getItem(`zoom_${currentUser.uid}`);
+                // 顯示設定（縮放、每排人數）一律存在本機，沒有帳號專屬值時退回共用的本機設定
+                const savedZoom = localStorage.getItem(`zoom_${currentUser.uid}`) || localStorage.getItem('v35_local_zoom');
                 if(savedZoom) { document.getElementById('uiZoom').value = savedZoom; changeZoom(savedZoom); }
                 document.getElementById('seatCols').value = getSeatCols();
 
@@ -728,7 +737,7 @@
                 if (data) {
                     if (data.announcements && data.announcements !== announcements && isFirstLoad === false) { document.getElementById('announceDot').classList.remove('hidden'); }
                     
-                    tasks = data.tasks || []; globalTaskData = data.globalTaskData || {}; taskDates = data.taskDates || {}; studentPasswords = data.studentPasswords || {}; 
+                    tasks = toNameList(data.tasks); globalTaskData = data.globalTaskData || {}; taskDates = data.taskDates || {}; studentPasswords = data.studentPasswords || {};
                     historyAtt = data.historyAtt || {}; dailyNotes = data.dailyNotes || {}; announcements = data.announcements || ""; cleanTasks = CLEAN_ITEMS.slice(); historyClean = data.historyClean || {};
                     
                     let oldGrades = data.grades || {};
@@ -945,6 +954,18 @@
         function completeAllFocusedClean() { completeAllClean(focusedCleanName); }
         function deleteFocusedTask() { deleteTask(tasks.indexOf(focusedTaskName)); }
 
+        // 某個畫面繪製失敗時就地顯示原因，而不是靜靜地留下一片空白
+        function renderGuarded(label, fn) {
+            try {
+                fn();
+            } catch (e) {
+                console.error(`[${label}] 繪製失敗`, e);
+                const hostId = { '作業進度': 'taskFocus', '潔牙掃地': 'cleanFocus', '出缺勤': 'attFocus' }[label];
+                const host = document.getElementById(hostId);
+                if (host) host.innerHTML = `<div class="empty-note">⚠️ ${label}顯示失敗：${e.message}<br><span style="font-weight:700">請點登入畫面的「重置示範資料」，或回報這段訊息。</span></div>`;
+            }
+        }
+
         function renderTaskFocus(count, imperfectSids) {
             const host = document.getElementById('taskFocus');
             if (tasks.length === 0) { host.innerHTML = `<div class="empty-note">還沒有作業。在上方輸入作業名稱後按「新增」。</div>`; return; }
@@ -958,7 +979,7 @@
                 return `<div class="focus-chip ${name === t ? 'is-active' : ''} ${allDone ? 'is-complete' : ''}"><span class="drag-handle" title="拖曳排序">${ic('grip')}</span><button class="focus-chip-btn" onclick="focusTaskAt(${i})"><span>${name}</span><span class="focus-chip-count">${allDone ? '全交齊' : done + '/' + count}</span></button></div>`;
             }).join('');
 
-            const dateStr = taskDates[t] ? `${taskDates[t].slice(5).replace('-', '/')} 指派` : '';
+            const dateStr = typeof taskDates[t] === 'string' ? `${taskDates[t].slice(5).replace('-', '/')} 指派` : '';
             const lbls = { 0: "未交", 1: "待訂", 2: "完成", 3: "批改中" };
             let cells = '';
             for (let i = 1; i <= count; i++) {
@@ -1041,10 +1062,11 @@
             const btnShowHidden = document.getElementById('btnShowHiddenStudents');
             if(btnShowHidden) { document.getElementById('hiddenStudentCount').innerText = manuallyHiddenTaskStudents.size; btnShowHidden.classList.toggle('hidden', currentTab !== 'task' || manuallyHiddenTaskStudents.size === 0); }
 
-            renderTaskFocus(count, imperfectSids);
-            renderCleanFocus(count, todaysClean);
+            // 三個畫面各自獨立繪製：某一個因為資料異常而失敗時，不該讓其它畫面變成一片空白
+            renderGuarded('作業進度', () => renderTaskFocus(count, imperfectSids));
+            renderGuarded('潔牙掃地', () => renderCleanFocus(count, todaysClean));
 
-            renderAttFocus(count, todaysAtt);
+            renderGuarded('出缺勤', () => renderAttFocus(count, todaysAtt));
 
             if(currentTab === 'grade') renderGrades();
 

@@ -85,7 +85,9 @@
         if (eventType !== 'value') return;
         if (!listeners[path]) listeners[path] = [];
         listeners[path].push(callback);
-        callback(makeSnapshot(path));
+        // 真實 Firebase 一律非同步送出第一筆快照。若在這裡同步呼叫，頁面腳本會在
+        // 自己的 let/const 都還沒宣告完就被回呼執行到，造成 TDZ 錯誤。
+        Promise.resolve().then(function () { callback(makeSnapshot(path)); });
       },
       off: function () {
         delete listeners[path];
@@ -121,7 +123,9 @@
     return {
       onAuthStateChanged: function (cb) {
         authListeners.push(cb);
-        cb(getCurrentUser());
+        // 同上：非同步回呼。已登入狀態下重新整理時，同步呼叫會讓 startDatabaseSync()
+        // 在頁面腳本宣告完變數之前就執行，資料因此永遠載不進來。
+        Promise.resolve().then(function () { cb(getCurrentUser()); });
         return function () { authListeners = authListeners.filter(function (l) { return l !== cb; }); };
       },
       signInWithPopup: function () {
