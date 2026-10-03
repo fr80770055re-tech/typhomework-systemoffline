@@ -566,9 +566,11 @@
             // filter 讓 Sortable 放過 button 上的 mousedown（chip 的選取按鈕），
             // 所以拖曳把手必須放在 button 之外，否則會連把手一起被濾掉。
             const opts = { animation: 200, handle: '.drag-handle', filter: 'button, .state-btn, input, textarea', preventOnFilter: false, delay: 150, delayOnTouchOnly: true, ghostClass: 'sortable-ghost' };
-            if(taskSortable) taskSortable.destroy();
+            // 清單為空時 chip 列不會被渲染，所以 destroy 後一定要把參考清掉：
+            // 否則下次 render 會對已銷毀的實例再 destroy 一次而拋例外，連帶中斷 saveToCloud()。
+            if(taskSortable) { taskSortable.destroy(); taskSortable = null; }
             if(document.getElementById('taskChips')) { taskSortable = new Sortable(document.getElementById('taskChips'), { ...opts, onEnd: function (evt) { const movedItem = tasks.splice(evt.oldIndex, 1)[0]; tasks.splice(evt.newIndex, 0, movedItem); saveToCloud(); }}); }
-            if(cleanSortable) cleanSortable.destroy();
+            if(cleanSortable) { cleanSortable.destroy(); cleanSortable = null; }
             if(document.getElementById('cleanChips')) { cleanSortable = new Sortable(document.getElementById('cleanChips'), { ...opts, onEnd: function (evt) { const movedItem = cleanTasks.splice(evt.oldIndex, 1)[0]; cleanTasks.splice(evt.newIndex, 0, movedItem); saveToCloud(); }}); }
         }
 
@@ -1063,13 +1065,14 @@
         function addItem() { 
             let val = document.getElementById('itemName').value.trim(); if (!val) return;
             if(/[.#$/\[\]]/.test(val)) { alert("⚠️ 名稱符號已自動純淨化！"); val = val.replace(/[.#$/\[\]]/g, '_'); }
-            if(currentTab === 'task') { 
-                if(!tasks.includes(val)) { 
-                    tasks.push(val); 
-                    taskDates[val] = document.getElementById('currentDate').value; 
-                } 
+            if(currentTab === 'task') {
+                if(!tasks.includes(val)) {
+                    tasks.push(val);
+                    taskDates[val] = document.getElementById('currentDate').value;
+                }
+                focusedTaskName = val; // 新增後直接聚焦過去，否則畫面停在舊作業，會像沒反應
             }
-            else if(currentTab === 'clean') { if(!cleanTasks.includes(val)) { cleanTasks.push(val); } }
+            else if(currentTab === 'clean') { if(!cleanTasks.includes(val)) { cleanTasks.push(val); } focusedCleanName = val; }
             else if(currentTab === 'grade') { if(!grades[currentGradeSubject].categories.find(c => c.name === val)) { grades[currentGradeSubject].categories.push({ name: val, weight: 1, exams: [] }); } }
             document.getElementById('itemName').value = '';
             if(currentTab === 'grade') renderGrades(); else renderAll();
