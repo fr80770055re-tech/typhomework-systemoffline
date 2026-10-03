@@ -291,6 +291,8 @@
             <p class="text-[var(--ink-3)] font-bold mb-8">點擊下方按鈕即可直接進入示範教師帳號</p>
             <button onclick="loginWithGoogle()" class="btn btn-dark w-full !h-14 !text-lg !rounded-2xl">👩‍🏫 進入示範教師帳號</button>
             <button onclick="window.resetOfflineDemo && window.resetOfflineDemo() && location.reload()" class="btn btn-quiet w-full !h-10 !text-sm !rounded-2xl mt-3">🔄 重置示範資料</button>
+            <!-- 用檔案的 Last-Modified 當版本標示，方便分辨瀏覽器是不是還拿著舊的快取 -->
+            <p class="text-[var(--ink-3)] font-bold text-xs mt-4" id="buildStamp"></p>
         </div>
     </div>
 
@@ -551,7 +553,10 @@
         const db = firebase.database();
         let currentUser = null;
 
-        let tasks = []; let globalTaskData = {}; let historyAtt = {}; let dailyNotes = {}; let announcements = ""; let cleanTasks = []; let historyClean = {}; 
+        // 潔牙掃地固定就這兩項，不開放新增或刪除
+        const CLEAN_ITEMS = ['潔牙', '掃地'];
+
+        let tasks = []; let globalTaskData = {}; let historyAtt = {}; let dailyNotes = {}; let announcements = ""; let cleanTasks = CLEAN_ITEMS.slice(); let historyClean = {};
         let examScheduleStr = "08:40 - 09:20 國語\n09:30 - 10:10 數學";
         let currentGradeSubject = '國語';
         let grades = { "國語": { categories: [], scores: {} }, "數學": { categories: [], scores: {} } };
@@ -560,7 +565,7 @@
         let currentTab = 'task'; const attLabels = ["出席", "事假", "病假", "公假", "喪假", "遲到"];
         let isHidePerfect = false;
         let manuallyHiddenTaskStudents = new Set();
-        let taskSortable = null; let cleanSortable = null; let pendingNextFocusIndex = null;
+        let taskSortable = null; let pendingNextFocusIndex = null;
 
         function initSortable() {
             // filter 讓 Sortable 放過 button 上的 mousedown（chip 的選取按鈕），
@@ -570,8 +575,7 @@
             // 否則下次 render 會對已銷毀的實例再 destroy 一次而拋例外，連帶中斷 saveToCloud()。
             if(taskSortable) { taskSortable.destroy(); taskSortable = null; }
             if(document.getElementById('taskChips')) { taskSortable = new Sortable(document.getElementById('taskChips'), { ...opts, onEnd: function (evt) { const movedItem = tasks.splice(evt.oldIndex, 1)[0]; tasks.splice(evt.newIndex, 0, movedItem); saveToCloud(); }}); }
-            if(cleanSortable) { cleanSortable.destroy(); cleanSortable = null; }
-            if(document.getElementById('cleanChips')) { cleanSortable = new Sortable(document.getElementById('cleanChips'), { ...opts, onEnd: function (evt) { const movedItem = cleanTasks.splice(evt.oldIndex, 1)[0]; cleanTasks.splice(evt.newIndex, 0, movedItem); saveToCloud(); }}); }
+            // 潔牙掃地是固定兩項，不需要排序
         }
 
         function openPasswordModal() {
@@ -608,6 +612,14 @@
         function toggleHidePerfect() { isHidePerfect = !isHidePerfect; const btn = document.getElementById('btnHidePerfect'); document.getElementById('btnHidePerfectText').innerText = isHidePerfect ? '顯示全班' : '隱藏全過關'; btn.querySelector('use').setAttribute('href', isHidePerfect ? '#i-eye' : '#i-eye-off'); btn.classList.toggle('btn-toggled', isHidePerfect); btn.classList.toggle('btn-quiet', !isHidePerfect); btn.setAttribute('aria-pressed', isHidePerfect); renderAll(); }
         function hideStudentTask(id) { manuallyHiddenTaskStudents.add(id); renderAll(); }
         function showAllHiddenTaskStudents() { manuallyHiddenTaskStudents.clear(); renderAll(); }
+        (function showBuildStamp() {
+            const el = document.getElementById('buildStamp');
+            if (!el) return;
+            const d = new Date(document.lastModified);
+            const p = (n) => String(n).padStart(2, '0');
+            el.innerText = `版本：${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        })();
+
         function getLocalDateString() { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0]; }
         document.getElementById('currentDate').value = getLocalDateString();
         setInterval(() => { const timeStr = new Date().toLocaleTimeString('zh-TW', {hour12: false}); document.getElementById('liveClock').innerText = timeStr; if(document.getElementById('hugeLiveClock')) document.getElementById('hugeLiveClock').innerText = timeStr; }, 1000);
@@ -717,7 +729,7 @@
                     if (data.announcements && data.announcements !== announcements && isFirstLoad === false) { document.getElementById('announceDot').classList.remove('hidden'); }
                     
                     tasks = data.tasks || []; globalTaskData = data.globalTaskData || {}; taskDates = data.taskDates || {}; studentPasswords = data.studentPasswords || {}; 
-                    historyAtt = data.historyAtt || {}; dailyNotes = data.dailyNotes || {}; announcements = data.announcements || ""; cleanTasks = data.cleanTasks || []; historyClean = data.historyClean || {};
+                    historyAtt = data.historyAtt || {}; dailyNotes = data.dailyNotes || {}; announcements = data.announcements || ""; cleanTasks = CLEAN_ITEMS.slice(); historyClean = data.historyClean || {};
                     
                     let oldGrades = data.grades || {};
                     ["國語", "數學"].forEach(sub => {
@@ -748,7 +760,7 @@
             const inputField = document.getElementById('itemName'); const subjectSwitch = document.getElementById('gradeSubjectSwitch'); const btnHidePerfect = document.getElementById('btnHidePerfect'); const btnShowHiddenStudents = document.getElementById('btnShowHiddenStudents'); const btnAdd = document.getElementById('btnAddItem'); const btnReminder = document.getElementById('btnReminder');
             if(tab === 'task') { inputField.placeholder = "新增作業名稱..."; subjectSwitch.classList.add('hidden'); btnHidePerfect.classList.remove('hidden'); btnShowHiddenStudents.classList.toggle('hidden', manuallyHiddenTaskStudents.size === 0); btnAdd.innerText = '新增'; } else if(tab === 'clean') { inputField.placeholder = "新增檢核項目..."; subjectSwitch.classList.add('hidden'); btnHidePerfect.classList.add('hidden'); btnShowHiddenStudents.classList.add('hidden'); btnAdd.innerText = '新增'; } else if(tab === 'grade') { inputField.placeholder = "輸入主項目(如數學習作)"; subjectSwitch.classList.remove('hidden'); btnHidePerfect.classList.add('hidden'); btnShowHiddenStudents.classList.add('hidden'); btnAdd.innerText = '加主項目'; } else { btnHidePerfect.classList.add('hidden'); btnShowHiddenStudents.classList.add('hidden'); }
             btnReminder.classList.toggle('hidden', tab !== 'task'); document.getElementById('btnPrintChecklist').classList.toggle('hidden', tab !== 'task'); document.getElementById('taskLegend').classList.toggle('lg:flex', tab === 'task');
-            document.getElementById('dynamicInputGroup').classList.toggle('hidden', tab === 'att'); 
+            document.getElementById('dynamicInputGroup').classList.toggle('hidden', tab === 'att' || tab === 'clean');
             document.getElementById('btnTaskTab').className = `tab-btn ${tab === 'task' ? 'tab-active' : 'tab-inactive'}`; document.getElementById('btnCleanTab').className = `tab-btn ${tab === 'clean' ? 'tab-active' : 'tab-inactive'}`; document.getElementById('btnGradeTab').className = `tab-btn ${tab === 'grade' ? 'tab-active' : 'tab-inactive'}`; document.getElementById('btnAttTab').className = `tab-btn ${tab === 'att' ? 'tab-active' : 'tab-inactive'}`;
             renderAll();
         }
@@ -932,7 +944,6 @@
         function completeAllFocusedTask() { completeAllTask(focusedTaskName); }
         function completeAllFocusedClean() { completeAllClean(focusedCleanName); }
         function deleteFocusedTask() { deleteTask(tasks.indexOf(focusedTaskName)); }
-        function deleteFocusedClean() { deleteCleanTask(cleanTasks.indexOf(focusedCleanName)); }
 
         function renderTaskFocus(count, imperfectSids) {
             const host = document.getElementById('taskFocus');
@@ -980,7 +991,7 @@
                 let done = 0;
                 for (let s = 1; s <= count; s++) if (((todaysClean[s] || {})[name] || 0) === 1) done++;
                 const allDone = count > 0 && done === count;
-                return `<div class="focus-chip ${name === t ? 'is-active' : ''} ${allDone ? 'is-complete' : ''}"><span class="drag-handle" title="拖曳排序">${ic('grip')}</span><button class="focus-chip-btn" onclick="focusCleanAt(${i})"><span>${name}</span><span class="focus-chip-count">${allDone ? '全過關' : done + '/' + count}</span></button></div>`;
+                return `<div class="focus-chip ${name === t ? 'is-active' : ''} ${allDone ? 'is-complete' : ''}"><button class="focus-chip-btn" onclick="focusCleanAt(${i})"><span>${name}</span><span class="focus-chip-count">${allDone ? '全過關' : done + '/' + count}</span></button></div>`;
             }).join('');
 
             const lbls = ["未完成", "完成"];
@@ -995,7 +1006,6 @@
                     <div class="focus-title">${t}</div>
                     <div class="focus-actions">
                         <button onclick="completeAllFocusedClean()" class="btn btn-quiet btn-sm">${ic('check')}全班過關</button>
-                        <button onclick="deleteFocusedClean()" class="btn btn-danger-quiet btn-sm">${ic('x')}刪除此項目</button>
                     </div>
                 </div>${seatGrid(cells)}`;
         }
@@ -1072,7 +1082,6 @@
                 }
                 focusedTaskName = val; // 新增後直接聚焦過去，否則畫面停在舊作業，會像沒反應
             }
-            else if(currentTab === 'clean') { if(!cleanTasks.includes(val)) { cleanTasks.push(val); } focusedCleanName = val; }
             else if(currentTab === 'grade') { if(!grades[currentGradeSubject].categories.find(c => c.name === val)) { grades[currentGradeSubject].categories.push({ name: val, weight: 1, exams: [] }); } }
             document.getElementById('itemName').value = '';
             if(currentTab === 'grade') renderGrades(); else renderAll();
@@ -1090,7 +1099,6 @@
         function deleteTask(i) { if(confirm('確定移除作業欄位？')) { const deletedTask = tasks.splice(i, 1)[0]; delete taskDates[deletedTask]; saveToCloud(); } }
         function completeAllTask(taskName) { if(confirm(`確定將【${taskName}】設為全班完成？`)) { const count = parseInt(document.getElementById('studentCount').value) || 0; for(let i = 1; i <= count; i++) { if(!globalTaskData[i]) globalTaskData[i] = {}; globalTaskData[i][taskName] = 2; } saveToCloud(); } }
         function cycleClean(id, t) { const d = document.getElementById('currentDate').value; if(!historyClean[d]) historyClean[d] = {}; if(!historyClean[d][id]) historyClean[d][id] = {}; historyClean[d][id][t] = ((historyClean[d][id][t]||0)+1)%2; saveToCloud(); }
-        function deleteCleanTask(i) { if(confirm('確定移除此檢核項目？')) { cleanTasks.splice(i, 1); saveToCloud(); } }
         function completeAllClean(taskName) { if(confirm(`確定將本日【${taskName}】設為全班過關？`)) { const count = parseInt(document.getElementById('studentCount').value) || 0; const d = document.getElementById('currentDate').value; if(!historyClean[d]) historyClean[d] = {}; for(let i = 1; i <= count; i++) { if(!historyClean[d][i]) historyClean[d][i] = {}; historyClean[d][i][taskName] = 1; } saveToCloud(); } }
         function cycleAttendance(id) { const d = document.getElementById('currentDate').value; if(!historyAtt[d]) historyAtt[d] = {}; historyAtt[d][id] = ((historyAtt[d][id]||0)+1)%6; saveToCloud(); }
 

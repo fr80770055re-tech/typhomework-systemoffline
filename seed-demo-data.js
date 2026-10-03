@@ -34,7 +34,7 @@
       historyAtt: {},
       dailyNotes: {},
       announcements: '📣 這是離線 Demo 示範資料。\n老師可以直接點選學生格子切換作業狀態，所有變更只會存在你目前的瀏覽器裡。\n家長查詢頁可以用座號 1~5、密碼 0000 登入查看。',
-      cleanTasks: ['掃地', '擦黑板'],
+      cleanTasks: ['潔牙', '掃地'],
       historyClean: {},
       grades: { '國語': { categories: [], scores: {} }, '數學': { categories: [], scores: {} } },
       studentPasswords: studentPasswords,
